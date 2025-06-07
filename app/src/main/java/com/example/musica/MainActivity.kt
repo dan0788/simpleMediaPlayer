@@ -6,22 +6,29 @@ import android.widget.Button
 import android.widget.TextView
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import com.example.musica.classes.GetSongsAssets
+import com.example.musica.manager.MediaPlayerController
+import com.example.musica.manager.SongsController
 import java.io.IOException
+import android.util.Log
 
 class MainActivity : AppCompatActivity() {
 
-    // Declarar MediaPlayer a nivel de clase para poder controlarlo
-    private var mediaPlayer: MediaPlayer? = null
+    private var currentMediaPlayer: MediaPlayer? = null
     private val TAG = "MainActivityMusic"
 
-    //definir componentes
-    private lateinit var textViewComponent: TextView
-    private lateinit var textView2Component: TextView
+    private lateinit var textViewSongsComponent: TextView
+    private lateinit var textViewPlayerComponent: TextView
     private lateinit var playButtonComponent: Button
     private lateinit var pauseButtonComponent: Button
     private lateinit var stopButtonComponent: Button
     private lateinit var nextButtonComponent: Button
     private lateinit var backButtonComponent: Button
+    private val musicList: MutableList<String> = mutableListOf()
+
+    private lateinit var getSongsAssets:GetSongsAssets
+    private lateinit var songsManager:SongsController
+    private lateinit var mediaPlayerController: MediaPlayerController
 
     override fun onCreate(savedInstanceState: Bundle?) {
 
@@ -29,8 +36,12 @@ class MainActivity : AppCompatActivity() {
         enableEdgeToEdge()
         setContentView(R.layout.activity_main)
 
-        textViewComponent = findViewById(R.id.textView)
-        textView2Component = findViewById(R.id.textView2)
+        getSongsAssets=GetSongsAssets()
+        songsManager=SongsController()
+        mediaPlayerController=MediaPlayerController(this)
+
+        textViewSongsComponent = findViewById(R.id.textViewSongs)
+        textViewPlayerComponent = findViewById(R.id.textViewPlayer)
         playButtonComponent = findViewById(R.id.playButton)
         pauseButtonComponent = findViewById(R.id.pauseButton)
         stopButtonComponent = findViewById(R.id.stopButton)
@@ -38,88 +49,73 @@ class MainActivity : AppCompatActivity() {
         backButtonComponent = findViewById(R.id.backButton)
 
         var text:String=""
-        var count:Int=0
-        var indexSongs:Int=0
-
-        val musicList:MutableList<String> = mutableListOf()
         val assetManager = this.assets
-        val systemAssetExclusions = listOf("webkit", "images", "geoid_map")
+        musicList.addAll(getSongsAssets.getSongs(assetManager))
 
-        // Obtener los nombres de archivos de la raíz de la carpeta assets
-        val filesInRoot = assetManager.list("")
+        mediaPlayerController.init(musicList, 0)
 
-        if (filesInRoot != null) {
-            for (fileName in filesInRoot) {
-                if (!systemAssetExclusions.contains(fileName)){
-                    musicList.add(fileName)
-                }
-            }
-        }
+        text=songsManager.setSongs(musicList)
+        textViewSongsComponent.text=text
 
-        for(item in musicList){
-            count++
-            text=text+"$count  "+item+"\n"
-        }
-        textViewComponent.text=text
-
-        count=0
         text=""
 
         playButtonComponent.setOnClickListener(){
             if (musicList.isNotEmpty()) {
-                if (mediaPlayer == null) {
-                    actualSong(musicList[indexSongs])
-                    textView2Component.text="Iniciando nueva reproducción: ${musicList[indexSongs]}"
-                } else if (!mediaPlayer!!.isPlaying) {
-                    mediaPlayer?.start()
-                    textView2Component.text="Reanudando reproducción: ${musicList[indexSongs]}"
+                currentMediaPlayer = mediaPlayerController.play()
+                textViewPlayerComponent.text = "Reproduciendo: ${mediaPlayerController.getCurrentSongName()}"
+
+                currentMediaPlayer?.setOnCompletionListener {
+                    textViewPlayerComponent.text = "Reproducción de ${mediaPlayerController.getCurrentSongName()} completada."
+                    Log.d(TAG, "Reproducción de ${mediaPlayerController.getCurrentSongName()} completada desde MainActivity.")
                 }
             } else {
-                textView2Component.text="No hay canciones en la lista para reproducir."
+                textViewPlayerComponent.text = "No hay canciones disponibles."
+                Log.w(TAG, "No hay canciones en la lista para reproducir.")
             }
         }
 
         pauseButtonComponent.setOnClickListener(){
-            mediaPlayer?.pause()
-            textView2Component.text="Canción pausada."
+            mediaPlayerController.pause()
+            textViewPlayerComponent.text = "Canción pausada: ${mediaPlayerController.getCurrentSongName()}"
         }
 
         stopButtonComponent.setOnClickListener(){
-            mediaPlayer?.stop()
-            mediaPlayer?.reset() // Prepara el MediaPlayer para una nueva fuente de datos
-            textView2Component.text="Canción detenida."
+            mediaPlayerController.stop()
+            mediaPlayerController.release()
+            currentMediaPlayer = null
+            textViewPlayerComponent.text = "Canción detenida."
         }
 
         backButtonComponent.setOnClickListener(){
             if (musicList.isNotEmpty()) {
-                indexSongs--
-                if (indexSongs < 0) {
-                    indexSongs = musicList.size - 1 // Vuelve al final si es la primera
+                currentMediaPlayer = mediaPlayerController.backSong()
+                textViewPlayerComponent.text = "Reproduciendo: ${mediaPlayerController.getCurrentSongName()}"
+                currentMediaPlayer?.setOnCompletionListener {
+                    textViewPlayerComponent.text = "Reproducción de ${mediaPlayerController.getCurrentSongName()} completada."
+                    Log.d(TAG, "Reproducción de ${mediaPlayerController.getCurrentSongName()} completada desde MainActivity.")
                 }
-                actualSong(musicList[indexSongs])
             }
-            textView2Component.text="Iniciando nueva reproducción: ${musicList[indexSongs]}"
         }
 
         nextButtonComponent.setOnClickListener(){
             if (musicList.isNotEmpty()) {
-                indexSongs++
-                if (indexSongs >= musicList.size) {
-                    indexSongs = 0 // Vuelve al principio si es la última
+                currentMediaPlayer = mediaPlayerController.nextSong()
+                textViewPlayerComponent.text = "Reproduciendo: ${mediaPlayerController.getCurrentSongName()}"
+                currentMediaPlayer?.setOnCompletionListener {
+                    textViewPlayerComponent.text = "Reproducción de ${mediaPlayerController.getCurrentSongName()} completada."
+                    Log.d(TAG, "Reproducción de ${mediaPlayerController.getCurrentSongName()} completada desde MainActivity.")
                 }
-                actualSong(musicList[indexSongs])
             }
-            textView2Component.text="Iniciando nueva reproducción: ${musicList[indexSongs]}"
         }
     }
 
     fun actualSong(songFileName:String){
-        mediaPlayer?.release()
-        mediaPlayer=null
+        currentMediaPlayer?.release()
+        currentMediaPlayer=null
         try {
             val fd = assets.openFd(songFileName)
 
-            mediaPlayer = MediaPlayer().apply {
+            currentMediaPlayer = MediaPlayer().apply {
                 setDataSource(
                     fd.fileDescriptor,
                     fd.startOffset,
@@ -127,26 +123,26 @@ class MainActivity : AppCompatActivity() {
                 )
                 prepare()
                 start()
-                textView2Component.text="Reproduciendo: $songFileName"
+                textViewPlayerComponent.text="Reproduciendo: $songFileName"
 
                 setOnCompletionListener {
-                    textView2Component.text="Reproducción de $songFileName completada."
+                    textViewPlayerComponent.text="Reproducción de $songFileName completada."
                 }
             }
             fd.close()
         } catch (e: IOException) {
-            textView2Component.text="Error al reproducir $songFileName: ${e.message}"
+            textViewPlayerComponent.text="Error al reproducir $songFileName: ${e.message}"
             e.printStackTrace()
         } catch (e: IllegalStateException) {
-            textView2Component.text="Estado ilegal al reproducir $songFileName: ${e.message}"
+            textViewPlayerComponent.text="Estado ilegal al reproducir $songFileName: ${e.message}"
             e.printStackTrace()
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        mediaPlayer?.release()
-        mediaPlayer = null
-        textView2Component.text="MediaPlayer liberado en onDestroy."
+        currentMediaPlayer?.release()
+        currentMediaPlayer = null
+        textViewPlayerComponent.text="MediaPlayer liberado en onDestroy."
     }
 }
